@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "51d91d9b_a21b49c5",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000015
+      },
+      "writtenOn": "2025-08-15T04:21:53Z",
+      "side": 1,
+      "message": "- Fixes 10W charging speed",
+      "revId": "8335144aaaff57269b6895c1987d6bf18727a0b1",
+      "serverId": "58543e18-2196-4633-8043-7787712585ad"
+    }
+  ]
+}
