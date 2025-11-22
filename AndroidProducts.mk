@@ -5,4 +5,4 @@
 #
 
 PRODUCT_MAKEFILES := \
-    $(LOCAL_DIR)/aosp_RMX2020.mk
+    $(LOCAL_DIR)/custom_RMX2020.mk
