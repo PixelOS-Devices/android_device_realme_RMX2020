@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
- 
+
 #define LOG_TAG "android.hardware.biometrics.fingerprint@2.1-service.RMX2020"
 
 #include <hardware/hardware.h>
@@ -22,6 +22,10 @@ namespace fingerprint {
 namespace V2_1 {
 namespace implementation {
 
+using OplusFingerprintError = vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintError;
+using OplusFingerprintAcquiredInfo = vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo;
+using OplusScreenState = vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintScreenState;
+
 BiometricsFingerprint::BiometricsFingerprint() {
     for(int i=0; i<10; i++) {
         mOplusBiometricsFingerprint = vendor::oplus::hardware::biometrics::fingerprint::V2_1::IBiometricsFingerprint::tryGetService();
@@ -31,9 +35,9 @@ BiometricsFingerprint::BiometricsFingerprint() {
     if(mOplusBiometricsFingerprint == nullptr) exit(0);
 }
 
-static bool receivedCancel;
-static bool receivedEnumerate;
-static uint64_t myDeviceId;
+static std::atomic<bool> receivedCancel{false};
+static std::atomic<bool> receivedEnumerate{false};
+static std::atomic<uint64_t> myDeviceId{0};
 static std::vector<uint32_t> knownFingers;
 class OplusClientCallback : public vendor::oplus::hardware::biometrics::fingerprint::V2_1::IBiometricsFingerprintClientCallback {
 public:
@@ -48,8 +52,8 @@ public:
         return Void();
     }
 
-    Return<void> onAcquired(uint64_t deviceId, vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo acquiredInfo,
-        int32_t vendorCode) {
+    Return<void> onAcquired(uint64_t deviceId,
+        OplusFingerprintAcquiredInfo acquiredInfo, int32_t vendorCode) {
         ALOGE("onAcquired %" PRIu64 " %d", deviceId, vendorCode);
         if(mClientCallback != nullptr)
             mClientCallback->onAcquired(deviceId, OplusToAOSPFingerprintAcquiredInfo(acquiredInfo), vendorCode);
@@ -64,10 +68,10 @@ public:
         return Void();
     }
 
-    Return<void> onError(uint64_t deviceId, vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintError error, int32_t vendorCode) {
-        ALOGE("onError %" PRIu64 " %d", deviceId, vendorCode);
-        if(error == vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_CANCELED) {
-            receivedCancel = true;
+    Return<void> onError(uint64_t deviceId, OplusFingerprintError error, int32_t vendorCode) {
+        ALOGE("onError %" PRIu64 " %d %d", deviceId, error, vendorCode);
+        if(error == OplusFingerprintError::ERROR_CANCELED) {
+            receivedCancel.store(true, std::memory_order_release);
         }
         if(mClientCallback != nullptr)
             mClientCallback->onError(deviceId, OplusToAOSPFingerprintError(error), vendorCode);
@@ -84,7 +88,7 @@ public:
 
     Return<void> onEnumerate(uint64_t deviceId, uint32_t fingerId, uint32_t groupId,
         uint32_t remaining) {
-        receivedEnumerate = true;
+        receivedEnumerate.store(true, std::memory_order_release);
         ALOGE("onEnumerate %" PRIu64 " %u %u %u", deviceId, fingerId, groupId, remaining);
         if(mClientCallback != nullptr)
             mClientCallback->onEnumerate(deviceId, fingerId, groupId, remaining);
@@ -95,7 +99,7 @@ public:
     Return<void> onTouchDown(uint64_t deviceId) { return Void(); }
     Return<void> onSyncTemplates(uint64_t deviceId, const hidl_vec<uint32_t>& fingerId, uint32_t remaining) {
         ALOGE("onSyncTemplates %" PRIu64 " %zu %" PRIu32, deviceId, fingerId.size(), remaining);
-        myDeviceId = deviceId;
+        myDeviceId.store(deviceId, std::memory_order_release);
 
         for(auto fid : fingerId) {
             ALOGE("\t- %u", fid);
@@ -112,31 +116,31 @@ public:
 
 private:
 
-    Return<android::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo> OplusToAOSPFingerprintAcquiredInfo(vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo info) {
+    static Return<android::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo> OplusToAOSPFingerprintAcquiredInfo(OplusFingerprintAcquiredInfo info) {
         switch(info) {
-            case vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_GOOD: return android::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_GOOD;
-            case vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_PARTIAL: return android::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_PARTIAL;
-            case vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_INSUFFICIENT: return android::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_INSUFFICIENT;
-            case vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_IMAGER_DIRTY: return android::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_IMAGER_DIRTY;
-            case vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_TOO_SLOW: return android::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_TOO_SLOW;
-            case vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_TOO_FAST: return android::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_TOO_FAST;
-            case vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_VENDOR: return android::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_VENDOR;
+            case OplusFingerprintAcquiredInfo::ACQUIRED_GOOD: return android::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_GOOD;
+            case OplusFingerprintAcquiredInfo::ACQUIRED_PARTIAL: return android::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_PARTIAL;
+            case OplusFingerprintAcquiredInfo::ACQUIRED_INSUFFICIENT: return android::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_INSUFFICIENT;
+            case OplusFingerprintAcquiredInfo::ACQUIRED_IMAGER_DIRTY: return android::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_IMAGER_DIRTY;
+            case OplusFingerprintAcquiredInfo::ACQUIRED_TOO_SLOW: return android::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_TOO_SLOW;
+            case OplusFingerprintAcquiredInfo::ACQUIRED_TOO_FAST: return android::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_TOO_FAST;
+            case OplusFingerprintAcquiredInfo::ACQUIRED_VENDOR: return android::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_VENDOR;
             default:
                 return android::hardware::biometrics::fingerprint::V2_1::FingerprintAcquiredInfo::ACQUIRED_GOOD;
         }
     }
 
-    Return<android::hardware::biometrics::fingerprint::V2_1::FingerprintError> OplusToAOSPFingerprintError(vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintError error) {
+    static Return<android::hardware::biometrics::fingerprint::V2_1::FingerprintError> OplusToAOSPFingerprintError(OplusFingerprintError error) {
         switch(error) {
-            case vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_NO_ERROR: return android::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_NO_ERROR;
-            case vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_HW_UNAVAILABLE: return android::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_HW_UNAVAILABLE;
-            case vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_UNABLE_TO_PROCESS: return android::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_UNABLE_TO_PROCESS;
-            case vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_TIMEOUT: return android::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_TIMEOUT;
-            case vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_NO_SPACE: return android::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_NO_SPACE;
-            case vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_CANCELED: return android::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_CANCELED;
-            case vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_UNABLE_TO_REMOVE: return android::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_UNABLE_TO_REMOVE;
-            case vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_LOCKOUT: return android::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_LOCKOUT;
-            case vendor::oplus::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_VENDOR: return android::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_VENDOR;
+            case OplusFingerprintError::ERROR_NO_ERROR: return android::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_NO_ERROR;
+            case OplusFingerprintError::ERROR_HW_UNAVAILABLE: return android::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_HW_UNAVAILABLE;
+            case OplusFingerprintError::ERROR_UNABLE_TO_PROCESS: return android::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_UNABLE_TO_PROCESS;
+            case OplusFingerprintError::ERROR_TIMEOUT: return android::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_TIMEOUT;
+            case OplusFingerprintError::ERROR_NO_SPACE: return android::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_NO_SPACE;
+            case OplusFingerprintError::ERROR_CANCELED: return android::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_CANCELED;
+            case OplusFingerprintError::ERROR_UNABLE_TO_REMOVE: return android::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_UNABLE_TO_REMOVE;
+            case OplusFingerprintError::ERROR_LOCKOUT: return android::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_LOCKOUT;
+            case OplusFingerprintError::ERROR_VENDOR: return android::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_VENDOR;
             default:
                 return android::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_NO_ERROR;
         }
@@ -147,7 +151,15 @@ Return<uint64_t> BiometricsFingerprint::setNotify(
         const sp<IBiometricsFingerprintClientCallback>& clientCallback) {
     ALOGE("setNotify");
     mOplusClientCallback = new OplusClientCallback(clientCallback);
-    return mOplusBiometricsFingerprint->setNotify(mOplusClientCallback);
+    uint64_t deviceId = mOplusBiometricsFingerprint->setNotify(mOplusClientCallback);
+    myDeviceId.store(deviceId, std::memory_order_release);
+    ALOGE("deviceId = %" PRIu64, deviceId);
+
+    // Required init for optical in-display sensors (Egis, etc.)
+    mOplusBiometricsFingerprint->setTouchEventListener();
+    mOplusBiometricsFingerprint->setScreenState(OplusScreenState::FINGERPRINT_SCREEN_ON);
+
+    return deviceId;
 }
 
 Return<RequestStatus> BiometricsFingerprint::OplusToAOSPRequestStatus(vendor::oplus::hardware::biometrics::fingerprint::V2_1::RequestStatus req) {
@@ -192,13 +204,13 @@ Return<uint64_t> BiometricsFingerprint::getAuthenticatorId()  {
 }
 
 Return<RequestStatus> BiometricsFingerprint::cancel()  {
-    receivedCancel = false;
+    receivedCancel.store(false, std::memory_order_release);
     RequestStatus ret = OplusToAOSPRequestStatus(mOplusBiometricsFingerprint->cancel());
     ALOGE("CANCELING");
-    if(!receivedCancel) {
+    if(!receivedCancel.load(std::memory_order_acquire)) {
         ALOGE("Sending cancel error");
         mOplusClientCallback->mClientCallback->onError(
-                myDeviceId,
+                myDeviceId.load(std::memory_order_acquire),
                 android::hardware::biometrics::fingerprint::V2_1::FingerprintError::ERROR_CANCELED,
                 0);
     }
@@ -206,16 +218,17 @@ Return<RequestStatus> BiometricsFingerprint::cancel()  {
 }
 
 Return<RequestStatus> BiometricsFingerprint::enumerate()  {
-    receivedEnumerate = false;
+    receivedEnumerate.store(false, std::memory_order_release);
     RequestStatus ret = OplusToAOSPRequestStatus(mOplusBiometricsFingerprint->enumerate());
     ALOGE("ENUMERATING");
-    if(ret == RequestStatus::SYS_OK && !receivedEnumerate) {
+    if(ret == RequestStatus::SYS_OK && !receivedEnumerate.load(std::memory_order_acquire)) {
         size_t nFingers = knownFingers.size();
         ALOGE("received fingers, sending our own %zu", nFingers);
+        uint64_t deviceId = myDeviceId.load(std::memory_order_acquire);
         if(nFingers > 0) {
             for(auto finger: knownFingers) {
                 mOplusClientCallback->mClientCallback->onEnumerate(
-                        myDeviceId,
+                        deviceId,
                         finger,
                         0,
                         --nFingers);
@@ -223,7 +236,7 @@ Return<RequestStatus> BiometricsFingerprint::enumerate()  {
             }
         } else {
             mOplusClientCallback->mClientCallback->onEnumerate(
-                    myDeviceId,
+                    deviceId,
                     0,
                     0,
                     0);
