@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <log/log.h>
 #include <android/log.h>
 #include <hardware/hardware.h>
@@ -15,6 +16,7 @@
 #include <android/hardware/biometrics/fingerprint/2.1/IBiometricsFingerprint.h>
 #include <android/hardware/biometrics/fingerprint/2.1/types.h>
 #include <vendor/oplus/hardware/biometrics/fingerprint/2.1/IBiometricsFingerprint.h>
+#include <vendor/oplus/hardware/biometrics/fingerprint/2.1/types.h>
 
 namespace android {
 namespace hardware {
