@@ -323,7 +323,7 @@ PRODUCT_COPY_FILES += \
 # Soong namespaces
 PRODUCT_SOONG_NAMESPACES += \
     hardware/google/interfaces \
-    hardware/google/pixel \
+    hardware/google/pixel/power-libperfmgr \
     hardware/mediatek \
     hardware/mediatek/libmtkperf_client \
     hardware/mediatek/libaedv \
